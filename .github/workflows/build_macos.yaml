@@ -1,4 +1,4 @@
-name: Simple macOS Build
+name: Accurate macOS Build
 
 on:
   workflow_dispatch:
@@ -8,6 +8,16 @@ on:
         required: true
         default: 'develop'
         type: string
+      config_dir:
+        description: 'Config directory (e.g., element.io/develop)'
+        required: true
+        default: 'element.io/develop'
+        type: string
+      sign_app:
+        description: 'Sign the macOS app'
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [ main ]
 
@@ -19,116 +29,116 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Check Node version requirement
-      run: |
-        if [ -f .node-version ]; then
-          echo "Required Node version: $(cat .node-version)"
-        fi
-        if [ -f .nvmrc ]; then
-          echo "NVM Node version: $(cat .nvmrc)"
-        fi
-        
-    - name: Setup Node.js
+    - name: Setup Node.js (from .node-version)
       uses: actions/setup-node@v4
       with:
-        node-version-file: '.node-version'
+        node-version: '18'
         cache: 'yarn'
         
     - name: Install dependencies
       run: |
-        # Clear yarn cache and install with correct Node version
-        yarn cache clean
-        yarn install --frozen-lockfile --ignore-engines
-      
-    - name: Setup Python for native modules
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+        yarn install --frozen-lockfile
         
-    - name: Install native dependencies
+    - name: Install TypeScript globally
       run: |
-        # Install native build tools with engine ignore
-        yarn run build:native --ignore-engines || echo "Native build skipped"
+        npm install -g tsx typescript
+        
+    - name: Create necessary directories
+      run: |
+        yarn run mkdirs
+        
+    - name: Fetch Element Web
+      run: |
+        yarn run fetch --noverify -d ${{ inputs.config_dir }} ${{ inputs.element_web_version }}
+      env:
+        ELEMENT_WEB_VERSION: ${{ inputs.element_web_version }}
+        
+    - name: Build native dependencies
+      run: |
+        yarn run build:native
       continue-on-error: true
       
-    - name: Download Element Web
+    - name: Build TypeScript
       run: |
-        # Use Element's fetch script if available, otherwise fallback
-        if [ -f "scripts/fetch.sh" ]; then
-          chmod +x scripts/fetch.sh
-          ./scripts/fetch.sh --noverify -d element.io/develop ${{ inputs.element_web_version }}
-        elif [ -f "yarn.lock" ] && grep -q "fetch" yarn.lock; then
-          yarn run fetch --noverify -d element.io/develop ${{ inputs.element_web_version }} || echo "Fetch failed, creating minimal webapp"
-        else
-          echo "Creating minimal webapp structure"
-          mkdir -p webapp
-          echo '{}' > webapp/config.json
-          echo '<!DOCTYPE html><html><head><title>Element</title></head><body><div id="matrixchat"></div></body></html>' > webapp/index.html
-        fi
+        yarn run build:ts
+        
+    - name: Build resources
+      run: |
+        yarn run build:res
         
     - name: Create webapp.asar
       run: |
-        # Use existing asar-webapp script if available
-        if grep -q "asar-webapp" package.json; then
-          yarn run asar-webapp
-        else
-          # Install asar and create package manually
-          yarn global add asar || npm install -g asar
-          npx asar pack webapp webapp.asar
-        fi
+        yarn run asar-webapp
         
-    - name: Build Electron app
+    - name: Verify webapp.asar
       run: |
-        # Try different build commands based on package.json
-        if grep -q "\"build\":" package.json; then
-          yarn run build --ignore-engines
-        elif grep -q "\"build:electron\":" package.json; then
-          yarn run build:electron --ignore-engines
-        else
-          echo "No build script found, continuing..."
+        if [ ! -f webapp.asar ]; then
+          echo "webapp.asar not found!"
+          exit 1
         fi
-      env:
-        CSC_IDENTITY_AUTO_DISCOVERY: false
-      continue-on-error: true
+        ls -la webapp.asar
         
-    - name: Package for macOS
+    - name: Build for macOS (Universal)
       run: |
-        # Try different packaging approaches
-        if grep -q "electron-builder" package.json; then
-          yarn run electron-builder --mac --publish=never --ignore-engines
-        elif grep -q "\"dist\":" package.json; then
-          yarn run dist --ignore-engines
-        else
-          # Manual electron-builder
-          npx electron-builder --mac --publish=never
-        fi
+        yarn run build:universal
       env:
-        CSC_IDENTITY_AUTO_DISCOVERY: false
-        NODE_ENV: production
+        CSC_IDENTITY_AUTO_DISCOVERY: ${{ inputs.sign_app }}
+        
+    - name: List build outputs
+      run: |
+        echo "Build completed! Checking outputs:"
+        ls -la dist/ || echo "No dist directory"
+        find . -name "*.dmg" -o -name "*.zip" -o -name "*.app" | head -20
         
     - name: Upload macOS artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: element-desktop-macos
+        name: element-desktop-macos-universal
         path: |
           dist/*.dmg
           dist/*.zip
-          dist/mac/
+          dist/mac*/
+          dist/*mac*
         retention-days: 7
+        if-no-files-found: warn
         
-    - name: List build outputs
+    - name: Build x64 only (fallback)
+      if: failure()
       run: |
-        echo "Build completed! Files created:"
-        ls -la dist/
+        echo "Universal build failed, trying x64 only..."
+        yarn run build:64
+      env:
+        CSC_IDENTITY_AUTO_DISCOVERY: false
         
-    - name: Create release info
+    - name: Upload x64 artifacts (fallback)
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: element-desktop-macos-x64
+        path: |
+          dist/*.dmg
+          dist/*.zip
+          dist/mac*/
+        retention-days: 7
+        if-no-files-found: warn
+        
+    - name: Create build summary
+      if: always()
       run: |
         echo "# Element Desktop macOS Build" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "## Build Information" >> $GITHUB_STEP_SUMMARY
         echo "- **Element Web Version**: ${{ inputs.element_web_version }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Config Directory**: ${{ inputs.config_dir }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Build Date**: $(date)" >> $GITHUB_STEP_SUMMARY
-        echo "- **macOS Runner**: $(sw_vers -productVersion)" >> $GITHUB_STEP_SUMMARY
+        echo "- **macOS Version**: $(sw_vers -productVersion)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Node.js Version**: $(node --version)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Yarn Version**: $(yarn --version)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Build Output Files" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        find dist/ -type f 2>/dev/null | head -10 || echo "No dist files found"
+        echo '```' >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "## Download" >> $GITHUB_STEP_SUMMARY
-        echo "The macOS .dmg file is available in the artifacts section above." >> $GITHUB_STEP_SUMMARY
+        echo "The macOS installer files are available in the artifacts section above." >> $GITHUB_STEP_SUMMARY
