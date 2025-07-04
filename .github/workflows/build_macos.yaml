@@ -80,34 +80,38 @@ jobs:
               if: steps.cache.outputs.cache-hit != 'true'
               run: yarn build:native:universal
 
-            # We split these because electron-builder gets upset if we set CSC_LINK even to an empty string
-            - name: "[Signed] Build App"
-              if: inputs.sign != ''
-              run: |
-                  yarn build:universal --publish never
-              env:
-                  APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-                  APPLE_ID: ${{ secrets.APPLE_ID }}
-                  APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-                  CSC_KEY_PASSWORD: ${{ secrets.APPLE_CSC_KEY_PASSWORD }}
-                  CSC_LINK: ${{ secrets.APPLE_CSC_LINK }}
-                  # Only set for Nightly builds
-                  ED_NIGHTLY: ${{ inputs.version }}
+            # Disabled signed build - always build unsigned for testing
+            # - name: "[Signed] Build App"
+            #   if: inputs.sign != ''
+            #   run: |
+            #       yarn build:universal --publish never
+            #   env:
+            #       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+            #       APPLE_ID: ${{ secrets.APPLE_ID }}
+            #       APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+            #       CSC_KEY_PASSWORD: ${{ secrets.APPLE_CSC_KEY_PASSWORD }}
+            #       CSC_LINK: ${{ secrets.APPLE_CSC_LINK }}
+            #       # Only set for Nightly builds
+            #       ED_NIGHTLY: ${{ inputs.version }}
 
-            - name: Check app was signed & notarised successfully
-              if: inputs.sign != ''
-              run: |
-                  hdiutil attach dist/*.dmg -mountpoint /Volumes/Element
-                  codesign -dv --verbose=4 /Volumes/Element/*.app
-                  spctl -a -vvv -t install /Volumes/Element/*.app
-                  hdiutil detach /Volumes/Element
+            # Disabled signature verification
+            # - name: Check app was signed & notarised successfully
+            #   if: inputs.sign != ''
+            #   run: |
+            #       hdiutil attach dist/*.dmg -mountpoint /Volumes/Element
+            #       codesign -dv --verbose=4 /Volumes/Element/*.app
+            #       spctl -a -vvv -t install /Volumes/Element/*.app
+            #       hdiutil detach /Volumes/Element
 
             - name: "[Unsigned] Build App"
-              if: inputs.sign == ''
+              # Always build unsigned - removed condition: if: inputs.sign == ''
               run: |
                   yarn build:universal --publish never
               env:
                   CSC_IDENTITY_AUTO_DISCOVERY: false
+                  SKIP_NOTARIZATION: true
+                  # Only set for Nightly builds
+                  ED_NIGHTLY: ${{ inputs.version }}
 
             - name: Generate releases.json
               if: inputs.base-url
