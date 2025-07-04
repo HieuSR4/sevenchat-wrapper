@@ -64,16 +64,6 @@ jobs:
             - name: Install Deps
               run: "yarn install --frozen-lockfile"
 
-            - name: Install TypeScript dependencies
-              run: |
-                  yarn add --dev typescript ts-node @types/node
-
-            - name: Fix script permissions
-              run: |
-                  chmod +x scripts/get-version.ts
-                  chmod +x scripts/generate-nightly-version.ts
-                  chmod +x scripts/branch-match.sh
-
             - name: Fetch Element Web (matching branch)
               id: branch-matching
               if: inputs.branch-matching
@@ -119,7 +109,7 @@ jobs:
                   VERSION=$(cat VERSIONS | sort -uf | tail -n1)
                   echo "Found latest nightly version $VERSION"
                   # Increment it
-                  echo "nightly=$(npx ts-node scripts/generate-nightly-version.ts --latest $VERSION)" >> $GITHUB_OUTPUT
+                  echo "nightly=$(scripts/generate-nightly-version.ts --latest $VERSION)" >> $GITHUB_OUTPUT
               env:
                   AWS_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
                   AWS_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_TOKEN }}
@@ -158,7 +148,7 @@ jobs:
               if: inputs.nightly
               run: |
                   BUNDLE_HASH=$(npx asar l webapp.asar | grep /bundles/ | head -n 1 | sed 's|.*/||')
-                  WEBAPP_VERSION=$(npx ts-node scripts/get-version.ts)
+                  WEBAPP_VERSION=$(./scripts/get-version.ts)
                   WEB_VERSION=${WEBAPP_VERSION:0:12}
                   JS_VERSION=${WEBAPP_VERSION:16:12}
 
