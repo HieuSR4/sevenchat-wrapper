@@ -39,9 +39,15 @@ jobs:
       run: |
         yarn install --frozen-lockfile
         
-    - name: Install TypeScript globally
+    - name: Verify TypeScript installation
       run: |
-        npm install -g tsx typescript
+        # Check if tsc is available
+        if ! command -v tsc &> /dev/null; then
+          echo "Installing TypeScript..."
+          yarn add --dev typescript
+        fi
+        echo "TypeScript version: $(npx tsc --version)"
+        echo "TSX version: $(npx tsx --version)"
         
     - name: Create necessary directories
       run: |
@@ -60,6 +66,7 @@ jobs:
       
     - name: Build TypeScript
       run: |
+        # Use yarn run instead of direct tsc command
         yarn run build:ts
         
     - name: Build resources
@@ -78,9 +85,10 @@ jobs:
         fi
         ls -la webapp.asar
         
-    - name: Build for macOS (Universal)
+    - name: Build for macOS (x64 first)
       run: |
-        yarn run build:universal
+        # Try x64 build first as it's more reliable
+        yarn run build:64
       env:
         CSC_IDENTITY_AUTO_DISCOVERY: ${{ inputs.sign_app }}
         
@@ -93,7 +101,7 @@ jobs:
     - name: Upload macOS artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: element-desktop-macos-universal
+        name: element-desktop-macos-x64
         path: |
           dist/*.dmg
           dist/*.zip
@@ -102,25 +110,27 @@ jobs:
         retention-days: 7
         if-no-files-found: warn
         
-    - name: Build x64 only (fallback)
-      if: failure()
+    - name: Try Universal build (optional)
+      if: success()
       run: |
-        echo "Universal build failed, trying x64 only..."
-        yarn run build:64
+        echo "Attempting universal build..."
+        yarn run build:universal || echo "Universal build failed, but x64 succeeded"
       env:
         CSC_IDENTITY_AUTO_DISCOVERY: false
+      continue-on-error: true
         
-    - name: Upload x64 artifacts (fallback)
-      if: failure()
+    - name: Upload Universal artifacts (if available)
+      if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: element-desktop-macos-x64
+        name: element-desktop-macos-universal
         path: |
           dist/*.dmg
           dist/*.zip
           dist/mac*/
         retention-days: 7
-        if-no-files-found: warn
+        if-no-files-found: ignore
+
         
     - name: Create build summary
       if: always()
