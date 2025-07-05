@@ -142,24 +142,24 @@ jobs:
                       mv linux-arm64-sqlcipher-static/*.tar.gz packages.element.io/install/linux/glibc-aarch64
                   fi
 
-            # We don't wish to store the installer for every nightly ever, so we only keep the latest
-            - name: "[Nightly] Strip version from installer file"
-              if: needs.prepare.outputs.nightly-version != ''
-              run: |
-                  set -x
+            # COMMENTED OUT: We don't wish to store the installer for every nightly ever, so we only keep the latest
+            # - name: "[Nightly] Strip version from installer file"
+            #   if: needs.prepare.outputs.nightly-version != ''
+            #   run: |
+            #       set -x
 
-                  # Windows
-                  for arch in x64 arm64
-                  do
-                      [ -d "win-$arch" ] && mv packages.element.io/install/win32/$arch/{*,"Element Nightly Setup"}.exe
-                  done
+            #       # Windows
+            #       for arch in x64 arm64
+            #       do
+            #           [ -d "win-$arch" ] && mv packages.element.io/install/win32/$arch/{*,"Element Nightly Setup"}.exe
+            #       done
 
-                  # macOS
-                  [ -d macos ] && mv packages.element.io/install/macos/{*,"Element Nightly"}.dmg
+            #       # macOS
+            #       [ -d macos ] && mv packages.element.io/install/macos/{*,"Element Nightly"}.dmg
 
-                  # Linux
-                  [ -d linux-amd64-sqlcipher-static ] && mv packages.element.io/install/linux/glibc-x86-64/{*,element-desktop-nightly}.tar.gz
-                  [ -d linux-arm64-sqlcipher-static ] && mv packages.element.io/install/linux/glibc-aarch64/{*,element-desktop-nightly}.tar.gz
+            #       # Linux
+            #       [ -d linux-amd64-sqlcipher-static ] && mv packages.element.io/install/linux/glibc-x86-64/{*,element-desktop-nightly}.tar.gz
+            #       [ -d linux-arm64-sqlcipher-static ] && mv packages.element.io/install/linux/glibc-aarch64/{*,element-desktop-nightly}.tar.gz
 
             - name: "[Release] Prepare release latest symlink"
               if: needs.prepare.outputs.nightly-version == ''
