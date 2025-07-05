@@ -77,7 +77,7 @@ jobs:
         uses: ./.github/workflows/build_macos.yaml
         secrets: inherit
         with:
-            sign: true
+            sign: false
             base-url: https://packages.element.io/${{ needs.prepare.outputs.packages-dir }}
             version: ${{ needs.prepare.outputs.nightly-version }}
 
